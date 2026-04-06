@@ -462,32 +462,60 @@ function getMonthExpenses(month){
   return list.sort(function(a,b){return a.dia-b.dia});
 }
 
-// Paid state with localStorage + JSONBin sync (cross-device)
-var JSONBIN_URL='https://api.jsonbin.io/v3/b';
-var JSONBIN_ID=null;
+// Paid state with cloud sync (JSONBlob - works across all devices)
+var CLOUD_URL='https://jsonblob.com/api/jsonBlob/019d6465-c50e-7659-b6a7-059c188fe740';
 var paidState={};
+var _saveTimer=null;
 try{paidState=JSON.parse(localStorage.getItem('despesas_paid')||'{}');}catch(e){}
 
 function savePaid(){
   try{localStorage.setItem('despesas_paid',JSON.stringify(paidState));}catch(e){}
-  saveToCloud();
+  // Debounce cloud saves (wait 500ms after last change)
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(saveToCloud,500);
 }
 
 function saveToCloud(){
   var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
-  localStorage.setItem('despesas_cloud',JSON.stringify(data));
+  fetch(CLOUD_URL,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
+  }).then(function(){console.log('Cloud save OK')})
+  .catch(function(e){console.log('Cloud save error',e)});
 }
 
-// Cross-device sync via URL hash sharing
-// When user marks something, it saves to localStorage
-// Both users on same browser will see the same data
+function loadFromCloud(){
+  fetch(CLOUD_URL)
+  .then(function(r){return r.json()})
+  .then(function(data){
+    if(data&&data.paid){
+      var localTs=parseInt(localStorage.getItem('despesas_ts')||'0');
+      // Always use cloud version (single source of truth)
+      paidState=data.paid;
+      localStorage.setItem('despesas_paid',JSON.stringify(paidState));
+      if(data.custom&&Object.keys(data.custom).length>0){
+        customExpenses=data.custom;
+        localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));
+      }
+      localStorage.setItem('despesas_ts',String(data.ts||0));
+      renderProjecao();
+      console.log('Cloud load OK - synced');
+    }
+  }).catch(function(e){console.log('Cloud load error, using local',e)});
+}
+
+// Load from cloud on startup
+setTimeout(loadFromCloud,800);
+// Auto-refresh from cloud every 30 seconds
+setInterval(loadFromCloud,30000);
 function isPaid(mk,i){return !!paidState[mk+'-'+i]}
 function togglePaid(mk,i){var k=mk+'-'+i;if(paidState[k])delete paidState[k];else paidState[k]=true;savePaid();}
 
 // ==================== CUSTOM EXPENSES (user-added) ====================
 var customExpenses={};
 try{customExpenses=JSON.parse(localStorage.getItem('despesas_custom')||'{}');}catch(e){}
-function saveCustom(){try{localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));}catch(e){} saveToCloud();}
+function saveCustom(){try{localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));}catch(e){} clearTimeout(_saveTimer);_saveTimer=setTimeout(saveToCloud,500);}
 
 // customExpenses format: { "04": [{dia,nome,valor,cat,tipo,pagto,id},...], "recurring": [{dia,nome,valor,cat,tipo,pagto,id},...] }
 // "recurring" items get added to ALL projected months

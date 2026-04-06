@@ -505,8 +505,29 @@ function loadFromCloud(){
   }).catch(function(e){console.log('Cloud load error, using local',e)});
 }
 
-// Load from cloud on startup
-setTimeout(loadFromCloud,800);
+// On startup: if local has data but cloud is empty, push local to cloud first
+// Otherwise load from cloud (cloud is source of truth)
+setTimeout(function(){
+  fetch(CLOUD_URL).then(function(r){return r.json()}).then(function(data){
+    var cloudHasData=data&&data.paid&&Object.keys(data.paid).length>0;
+    var localHasData=Object.keys(paidState).length>0;
+    if(!cloudHasData&&localHasData){
+      // First time with backend: push local state to cloud
+      console.log('Cloud empty, pushing local data up...');
+      saveToCloud();
+    }else if(cloudHasData){
+      // Cloud has data: sync down
+      paidState=data.paid;
+      localStorage.setItem('despesas_paid',JSON.stringify(paidState));
+      if(data.custom&&Object.keys(data.custom).length>0){
+        customExpenses=data.custom;
+        localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));
+      }
+      renderProjecao();
+      console.log('Synced from cloud');
+    }
+  }).catch(function(e){console.log('Sync error',e)});
+},800);
 // Auto-refresh from cloud every 30 seconds
 setInterval(loadFromCloud,30000);
 function isPaid(mk,i){return !!paidState[mk+'-'+i]}

@@ -249,6 +249,7 @@ if(sessionStorage.getItem('auth')==='1'){document.getElementById('loginOverlay')
       <button class="tab active" onclick="switchTab('projecao')" id="tab-projecao">&#128197; Projeção</button>
       <button class="tab" onclick="switchTab('2026')" id="tab-2026">2026</button>
       <button class="tab" onclick="switchTab('2025')" id="tab-2025">2025</button>
+      <button class="tab" onclick="forceSync()" id="syncBtn" title="Sincronizar dados">&#9741; Sync</button>
     </div>
   </div>
 </div>
@@ -505,28 +506,55 @@ function loadFromCloud(){
   }).catch(function(e){console.log('Cloud load error, using local',e)});
 }
 
-// On startup: if local has data but cloud is empty, push local to cloud first
-// Otherwise load from cloud (cloud is source of truth)
+function forceSync(){
+  var btn=document.getElementById('syncBtn');
+  btn.textContent='Syncing...';
+  btn.style.background='#f59e0b';btn.style.color='#fff';
+  // Push local to cloud first, then pull
+  var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
+  fetch(CLOUD_URL,{
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
+  }).then(function(){
+    btn.textContent='OK!';btn.style.background='#059669';
+    console.log('Force sync UP done');
+    setTimeout(function(){btn.textContent='Sync';btn.style.background='';btn.style.color='';},2000);
+  }).catch(function(e){
+    btn.textContent='Erro';btn.style.background='#dc2626';
+    console.log('Force sync error',e);
+    setTimeout(function(){btn.textContent='Sync';btn.style.background='';btn.style.color='';},2000);
+  });
+}
+
+// On startup: smart sync
 setTimeout(function(){
   fetch(CLOUD_URL).then(function(r){return r.json()}).then(function(data){
     var cloudHasData=data&&data.paid&&Object.keys(data.paid).length>0;
     var localHasData=Object.keys(paidState).length>0;
     if(!cloudHasData&&localHasData){
-      // First time with backend: push local state to cloud
       console.log('Cloud empty, pushing local data up...');
       saveToCloud();
-    }else if(cloudHasData){
-      // Cloud has data: sync down
+    }else if(cloudHasData&&!localHasData){
+      console.log('Local empty, pulling from cloud...');
       paidState=data.paid;
       localStorage.setItem('despesas_paid',JSON.stringify(paidState));
-      if(data.custom&&Object.keys(data.custom).length>0){
-        customExpenses=data.custom;
+      if(data.custom){customExpenses=data.custom;localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));}
+      renderProjecao();
+    }else if(cloudHasData&&localHasData){
+      // Both have data: merge (cloud + local, keeping both)
+      var merged=Object.assign({},data.paid,paidState);
+      paidState=merged;
+      localStorage.setItem('despesas_paid',JSON.stringify(paidState));
+      if(data.custom){
+        customExpenses=Object.assign({},data.custom,customExpenses||{});
         localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));
       }
+      saveToCloud();
       renderProjecao();
-      console.log('Synced from cloud');
+      console.log('Merged local+cloud');
     }
-  }).catch(function(e){console.log('Sync error',e)});
+  }).catch(function(e){console.log('Startup sync error',e)});
 },800);
 // Auto-refresh from cloud every 30 seconds
 setInterval(loadFromCloud,30000);

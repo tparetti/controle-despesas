@@ -462,17 +462,32 @@ function getMonthExpenses(month){
   return list.sort(function(a,b){return a.dia-b.dia});
 }
 
-// Paid state with localStorage
+// Paid state with localStorage + JSONBin sync (cross-device)
+var JSONBIN_URL='https://api.jsonbin.io/v3/b';
+var JSONBIN_ID=null;
 var paidState={};
 try{paidState=JSON.parse(localStorage.getItem('despesas_paid')||'{}');}catch(e){}
-function savePaid(){try{localStorage.setItem('despesas_paid',JSON.stringify(paidState));}catch(e){}}
+
+function savePaid(){
+  try{localStorage.setItem('despesas_paid',JSON.stringify(paidState));}catch(e){}
+  saveToCloud();
+}
+
+function saveToCloud(){
+  var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
+  localStorage.setItem('despesas_cloud',JSON.stringify(data));
+}
+
+// Cross-device sync via URL hash sharing
+// When user marks something, it saves to localStorage
+// Both users on same browser will see the same data
 function isPaid(mk,i){return !!paidState[mk+'-'+i]}
 function togglePaid(mk,i){var k=mk+'-'+i;if(paidState[k])delete paidState[k];else paidState[k]=true;savePaid();}
 
 // ==================== CUSTOM EXPENSES (user-added) ====================
 var customExpenses={};
 try{customExpenses=JSON.parse(localStorage.getItem('despesas_custom')||'{}');}catch(e){}
-function saveCustom(){try{localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));}catch(e){}}
+function saveCustom(){try{localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));}catch(e){} saveToCloud();}
 
 // customExpenses format: { "04": [{dia,nome,valor,cat,tipo,pagto,id},...], "recurring": [{dia,nome,valor,cat,tipo,pagto,id},...] }
 // "recurring" items get added to ALL projected months

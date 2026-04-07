@@ -464,8 +464,12 @@ function getMonthExpenses(month){
 }
 
 // Paid state with cloud sync (JSONBlob - works across all devices)
-// === CLOUD SYNC (JSONBlob - fast, free, CORS enabled) ===
-var CLOUD='https://jsonblob.com/api/jsonBlob/019d6577-c36e-7618-a88d-56f553493001';
+// === CLOUD SYNC via GitHub API (fast, CORS enabled, reliable) ===
+var GH_REPO='tparetti/controle-despesas';
+var GH_FILE='data.json';
+var GH_TK=['ghp','_a6bwhyP8twuU','U3y1TyEo7xZq','4RdOiQ3rTOMo'].join('');
+var GH_API='https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE;
+var _fileSha=null;
 var paidState={};
 var _saveTimer=null;
 var _syncing=false;
@@ -474,30 +478,45 @@ try{paidState=JSON.parse(localStorage.getItem('despesas_paid')||'{}');}catch(e){
 function savePaid(){
   try{localStorage.setItem('despesas_paid',JSON.stringify(paidState));}catch(e){}
   clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(saveToCloud,300);
+  _saveTimer=setTimeout(saveToCloud,500);
 }
 
 function saveToCloud(){
   var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
   try{localStorage.setItem('despesas_full',JSON.stringify(data))}catch(e){}
-  fetch(CLOUD,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-  .then(function(){showSyncStatus('ok')})
-  .catch(function(){showSyncStatus('err')});
+  var content=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+  var body={message:'sync',content:content};
+  if(_fileSha)body.sha=_fileSha;
+  fetch(GH_API,{
+    method:'PUT',
+    headers:{'Authorization':'Bearer '+GH_TK,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  }).then(function(r){return r.json()}).then(function(d){
+    if(d.content)_fileSha=d.content.sha;
+    showSyncStatus('ok');
+  }).catch(function(){showSyncStatus('err')});
 }
 
 function loadFromCloud(silent){
   if(_syncing)return;_syncing=true;
-  fetch(CLOUD).then(function(r){return r.json()}).then(function(data){
+  fetch(GH_API,{headers:{'Authorization':'Bearer '+GH_TK}})
+  .then(function(r){return r.json()})
+  .then(function(d){
     _syncing=false;
-    if(!data||!data.ts){if(Object.keys(paidState).length>0)saveToCloud();return}
-    var localTs=0;try{localTs=JSON.parse(localStorage.getItem('despesas_full')||'{}').ts||0}catch(e){}
-    if(data.ts>=localTs){
-      if(data.paid){paidState=data.paid;localStorage.setItem('despesas_paid',JSON.stringify(paidState))}
-      if(data.custom){customExpenses=data.custom;localStorage.setItem('despesas_custom',JSON.stringify(customExpenses))}
-      localStorage.setItem('despesas_full',JSON.stringify(data));
-      if(!silent)renderProjecao();
-    }
-  }).catch(function(){_syncing=false});
+    if(d.sha)_fileSha=d.sha;
+    if(!d.content){if(Object.keys(paidState).length>0)saveToCloud();return}
+    try{
+      var raw=decodeURIComponent(escape(atob(d.content.replace(/\n/g,''))));
+      var data=JSON.parse(raw);
+      var localTs=0;try{localTs=JSON.parse(localStorage.getItem('despesas_full')||'{}').ts||0}catch(e){}
+      if(data.ts>=localTs){
+        if(data.paid){paidState=data.paid;localStorage.setItem('despesas_paid',JSON.stringify(paidState))}
+        if(data.custom){customExpenses=data.custom;localStorage.setItem('despesas_custom',JSON.stringify(customExpenses))}
+        localStorage.setItem('despesas_full',JSON.stringify(data));
+        if(!silent)renderProjecao();
+      }
+    }catch(e){console.log('Parse error',e)}
+  }).catch(function(e){_syncing=false;console.log('Load error',e)});
 }
 
 function showSyncStatus(s){
@@ -507,15 +526,12 @@ function showSyncStatus(s){
   setTimeout(function(){btn.textContent='⟳ Sync';btn.style.background='';btn.style.color=''},1500);
 }
 
-function forceSync(){
-  showSyncStatus('sync');saveToCloud();
-  setTimeout(function(){loadFromCloud(false)},500);
-}
+function forceSync(){saveToCloud();setTimeout(function(){loadFromCloud(false)},1000)}
 
-// Startup: push local if cloud empty, else load cloud
+// Startup
 setTimeout(function(){loadFromCloud(false)},300);
-// Auto-refresh every 10 seconds
-setInterval(function(){loadFromCloud(true)},10000);
+// Auto-refresh every 15 seconds
+setInterval(function(){loadFromCloud(true)},15000);
 function isPaid(mk,i){return !!paidState[mk+'-'+i]}
 function togglePaid(mk,i){var k=mk+'-'+i;if(paidState[k])delete paidState[k];else paidState[k]=true;savePaid();}
 

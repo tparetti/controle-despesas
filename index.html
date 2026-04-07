@@ -478,32 +478,39 @@ function savePaid(){
 
 function saveToCloud(){
   var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
+  // Save to localStorage FIRST (instant), then cloud in background
+  try{localStorage.setItem('despesas_full',JSON.stringify(data))}catch(e){}
+  // Cloud save - don't await, fire and forget
+  var ctrl=new AbortController();
+  setTimeout(function(){ctrl.abort()},5000); // 5s timeout
   fetch(CLOUD_URL,{
     method:'PUT',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(data)
-  }).then(function(){console.log('Cloud save OK')})
-  .catch(function(e){console.log('Cloud save error',e)});
+    body:JSON.stringify(data),
+    signal:ctrl.signal
+  }).then(function(){console.log('Cloud OK')})
+  .catch(function(){console.log('Cloud slow/failed, local saved')});
 }
 
 function loadFromCloud(){
-  fetch(CLOUD_URL)
+  var ctrl=new AbortController();
+  setTimeout(function(){ctrl.abort()},5000);
+  fetch(CLOUD_URL,{signal:ctrl.signal})
   .then(function(r){return r.json()})
   .then(function(data){
-    if(data&&data.paid){
-      var localTs=parseInt(localStorage.getItem('despesas_ts')||'0');
-      // Always use cloud version (single source of truth)
-      paidState=data.paid;
-      localStorage.setItem('despesas_paid',JSON.stringify(paidState));
-      if(data.custom&&Object.keys(data.custom).length>0){
-        customExpenses=data.custom;
-        localStorage.setItem('despesas_custom',JSON.stringify(customExpenses));
+    if(data&&data.ts){
+      var localTs=0;
+      try{var ld=JSON.parse(localStorage.getItem('despesas_full')||'{}');localTs=ld.ts||0}catch(e){}
+      if(data.ts>localTs){
+        // Cloud is newer - use cloud data
+        if(data.paid){paidState=data.paid;localStorage.setItem('despesas_paid',JSON.stringify(paidState))}
+        if(data.custom){customExpenses=data.custom;localStorage.setItem('despesas_custom',JSON.stringify(customExpenses))}
+        localStorage.setItem('despesas_full',JSON.stringify(data));
+        renderProjecao();
+        console.log('Synced from cloud (newer)');
       }
-      localStorage.setItem('despesas_ts',String(data.ts||0));
-      renderProjecao();
-      console.log('Cloud load OK - synced');
     }
-  }).catch(function(e){console.log('Cloud load error, using local',e)});
+  }).catch(function(){console.log('Cloud unavailable, using local')});
 }
 
 function forceSync(){

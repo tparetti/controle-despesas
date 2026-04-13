@@ -984,7 +984,7 @@ function saveExpense(){
       // We'll mark the original as "replaced" via a deleted list
       if(!customExpenses._deleted)customExpenses._deleted={};
       if(!customExpenses._deleted[mk])customExpenses._deleted[mk]=[];
-      customExpenses._deleted[mk].push(editingItem.index);
+      customExpenses._deleted[mk].push(editingItem.expense.origIdx);
     }
   } else {
     // New item
@@ -1029,7 +1029,8 @@ function doDelete(idx,e){
     // Built-in item: mark as deleted for this month
     if(!customExpenses._deleted)customExpenses._deleted={};
     if(!customExpenses._deleted[mk])customExpenses._deleted[mk]=[];
-    if(customExpenses._deleted[mk].indexOf(idx)===-1) customExpenses._deleted[mk].push(idx);
+    var oi=(e&&e.origIdx!=null)?e.origIdx:idx;
+    if(customExpenses._deleted[mk].indexOf(oi)===-1) customExpenses._deleted[mk].push(oi);
   }
   saveCustom();
   renderProjecao();

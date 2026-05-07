@@ -464,19 +464,8 @@ function getMonthExpenses(month){
 }
 
 // Paid state with cloud sync (JSONBlob - works across all devices)
-// === CLOUD SYNC via GitHub API (fast, CORS enabled, reliable) ===
-var GH_REPO='tparetti/controle-despesas';
-var GH_FILE='data.json';
-var GH_BRANCH='main';
-var GH_API='https://api.github.com/repos/'+GH_REPO+'/contents/'+GH_FILE;
-var GH_RAW='https://raw.githubusercontent.com/'+GH_REPO+'/'+GH_BRANCH+'/'+GH_FILE;
-function ghToken(){return localStorage.getItem('gh_token')||''}
-function setGhToken(){
-  var cur=ghToken();
-  var t=prompt('Cole o GitHub Personal Access Token (fine-grained, contents:write em '+GH_REPO+'). Salvo só neste navegador.',cur);
-  if(t!==null){localStorage.setItem('gh_token',t.trim());_fileSha=null;}
-}
-var _fileSha=null;
+// === CLOUD SYNC via Cloudflare Worker ===
+var WORKER_URL='https://tparetti-apps.thiago-paretti.workers.dev/v1/despesas/state';
 var paidState={};
 var _saveTimer=null;
 var _syncing=false;
@@ -489,45 +478,24 @@ function savePaid(){
 }
 
 function saveToCloud(){
-  var tk=ghToken();
   var data={paid:paidState,custom:customExpenses||{},ts:Date.now()};
   try{localStorage.setItem('despesas_full',JSON.stringify(data))}catch(e){}
-  if(!tk){showSyncStatus('err');return}
-  if(!_fileSha){
-    fetch(GH_API,{headers:{'Authorization':'Bearer '+tk}})
-    .then(function(r){return r.json()})
-    .then(function(d){_fileSha=d.sha||null;doSave(data)})
-    .catch(function(){doSave(data)});
-  }else{doSave(data)}
-}
-function doSave(data){
-  var tk=ghToken();
-  if(!tk){showSyncStatus('err');return}
-  var content=btoa(unescape(encodeURIComponent(JSON.stringify(data))));
-  var body={message:'sync',content:content,branch:GH_BRANCH};
-  if(_fileSha)body.sha=_fileSha;
-  fetch(GH_API,{
+  fetch(WORKER_URL,{
     method:'PUT',
-    headers:{'Authorization':'Bearer '+tk,'Content-Type':'application/json'},
-    body:JSON.stringify(body)
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
   }).then(function(r){
     if(!r.ok)throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(function(d){
-    if(d.content)_fileSha=d.content.sha;
     showSyncStatus('ok');
   }).catch(function(e){
     console.log('Save error',e);
-    if(!e.message||e.message.indexOf('409')>-1||e.message.indexOf('422')>-1){
-      _fileSha=null;
-      setTimeout(function(){saveToCloud()},1000);
-    }else{showSyncStatus('err')}
+    showSyncStatus('err');
   });
 }
 
 function loadFromCloud(silent){
   if(_syncing)return;_syncing=true;
-  fetch(GH_RAW+'?ts='+Date.now(),{cache:'no-store'})
+  fetch(WORKER_URL+'?ts='+Date.now(),{cache:'no-store'})
   .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()})
   .then(function(raw){
     _syncing=false;
@@ -541,12 +509,6 @@ function loadFromCloud(silent){
         localStorage.setItem('despesas_full',JSON.stringify(data));
         if(!silent)renderProjecao();
       }
-      var tk=ghToken();
-      if(tk && !_fileSha){
-        fetch(GH_API,{headers:{'Authorization':'Bearer '+tk}})
-          .then(function(r){return r.ok?r.json():null})
-          .then(function(d){if(d&&d.sha)_fileSha=d.sha});
-      }
     }catch(e){console.log('Parse error',e)}
   }).catch(function(e){_syncing=false;console.log('Load error',e)});
 }
@@ -559,7 +521,6 @@ function showSyncStatus(s){
 }
 
 function forceSync(){
-  if(!ghToken()){setGhToken();if(!ghToken())return}
   saveToCloud();
   setTimeout(function(){loadFromCloud(false)},1000);
 }

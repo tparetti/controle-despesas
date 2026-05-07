@@ -962,7 +962,8 @@ function saveExpense(){
       // We'll mark the original as "replaced" via a deleted list
       if(!customExpenses._deleted)customExpenses._deleted={};
       if(!customExpenses._deleted[mk])customExpenses._deleted[mk]=[];
-      customExpenses._deleted[mk].push(editingItem.index);
+      var realIdx2=(typeof editingItem.expense.origIdx==='number')?editingItem.expense.origIdx:editingItem.index;
+      if(customExpenses._deleted[mk].indexOf(realIdx2)===-1) customExpenses._deleted[mk].push(realIdx2);
     }
   } else {
     // New item
@@ -1004,10 +1005,11 @@ function doDelete(idx,e){
     var j=customExpenses[mk]?customExpenses[mk].findIndex(function(x){return x.id===e.customId}):-1;
     if(j>-1)customExpenses[mk].splice(j,1);
   } else {
-    // Built-in item: mark as deleted for this month
+    // Built-in item: usa origIdx (índice real, não posição visível pós-sort)
+    var realIdx=(typeof e.origIdx==='number')?e.origIdx:idx;
     if(!customExpenses._deleted)customExpenses._deleted={};
     if(!customExpenses._deleted[mk])customExpenses._deleted[mk]=[];
-    if(customExpenses._deleted[mk].indexOf(idx)===-1) customExpenses._deleted[mk].push(idx);
+    if(customExpenses._deleted[mk].indexOf(realIdx)===-1) customExpenses._deleted[mk].push(realIdx);
   }
   saveCustom();
   renderProjecao();

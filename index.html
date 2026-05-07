@@ -558,7 +558,11 @@ function showSyncStatus(s){
   setTimeout(function(){btn.textContent='⟳ Sync';btn.style.background='';btn.style.color=''},1500);
 }
 
-function forceSync(){saveToCloud();setTimeout(function(){loadFromCloud(false)},1000)}
+function forceSync(){
+  if(!ghToken()){setGhToken();if(!ghToken())return}
+  saveToCloud();
+  setTimeout(function(){loadFromCloud(false)},1000);
+}
 
 // Startup
 setTimeout(function(){loadFromCloud(false)},300);

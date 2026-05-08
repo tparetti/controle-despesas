@@ -545,7 +545,7 @@ var editingItem=null; // {monthKey, index, source} when editing
 
 // ==================== STATE ====================
 var currentTab='projecao';
-var selMonth=3; // April
+var selMonth=new Date().getMonth(); // mês vigente
 var filterManual=false;
 var filterCat='Todas';
 var charts={};
